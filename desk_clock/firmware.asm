@@ -26,9 +26,9 @@
 		var_time_month2
 		var_time_year1
 		var_time_year2
+		var_time_sec	; Only used to count whether a new second has elapsed
 		var_temp_hi
 		var_temp_low
-		var_time_sec	; Only used to count whether a new second has elapsed
 		var_tmp			; To be used by math/num macros
 		var_tmp2		; To be used by math/num macros
 		t0_counter		; A counter that will increase each time timer0 overflows
@@ -51,7 +51,6 @@
 #define BUTTON_INC			PORTB, 3
 #define BUTTON_SET			PORTB, 7
 
-;#define BUTTON_DEC_BIT		0
 #define BUTTON_INC_BIT		0
 #define BUTTON_SET_BIT		1
 
@@ -166,6 +165,26 @@ _max7219_wwf macro file
 	movwf			var_data
 	movf			file, W
 	call			max7219_writeCmd
+	endm
+
+; Writes a 7-seg digit representation of the value in W (using _7seg_table)
+_max7219_7segW macro const_addr
+	call			_7seg_table
+	movwf			var_data
+	movlw			const_addr
+	call			max7219_writeCmd
+	endm
+
+; Writes a 7-seg digit representation of a given _7seg_table symbol (const)
+_max7219_7segK macro const_addr, const_7seg
+	movlw			const_7seg
+	_max7219_7segW	const_addr
+	endm
+	
+; Writes a 7-seg digit representation of a given _7seg_table symbol (const)
+_max7219_7segF macro const_addr, file
+	movf			file, w
+	_max7219_7segW	const_addr
 	endm
 
 ; Writes a constant value to the MAX7219 controller
@@ -379,14 +398,25 @@ displayLoop
 	; Disable test mode
 	_max7219_wk		MAX7219_ADDR_DISPLAYTEST, 0
 
-	; Show time for a couple of t0_counter cycles, then show temperature.
+	; Show time for a couple of t0_counter cycles, otherwise show temperature + date
 	btfss			t0_counter, 5
 	goto			displayTime
 
+; ###################################################
+;  TIME SLICE GROUP 01
+;   DATE, MONTH AND TEMPERATURE
+; ###################################################
+	; Only read date every other step of the counter
+	btfss			t0_counter, 0
+	call			read_date
+
+	; Half the time we will show the temperature, the other half is month + date
 	btfss			t0_counter, 4
-	goto			displayDate
+	goto			displayMonthAndDate
 
-
+;*************************************************
+;    TIME SLICE 01-01 : TEMPERATURE
+;*************************************************
 displayTemperature
 	; Select the register so we read temperature from now on
 	_i2c_req_write	TMP75_ADDRESS
@@ -408,9 +438,7 @@ displayTemperature
 	
 temperatureIsNegative
 	; 1st digit: Negative sign
-	movlw			_7SEG_MINUS
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT0
+	_max7219_7segK	MAX7219_ADDR_DIGIT0, _7SEG_MINUS
 
 	; Get rid of the sign and get two's complement value if needed
 	comf			var_temp_hi, F
@@ -419,18 +447,13 @@ temperatureIsNegative
 	; 2nd digit: Integer part of the temperature (tmp_hi), divided by 10
 	movf			var_temp_hi, W
 	_div_k			10
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT1
+	_max7219_7segW	MAX7219_ADDR_DIGIT1
 
 	; 3rd digit: Reminder of the division (stored in var_tmp)
-	movf			var_tmp, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT2
+	_max7219_7segF	MAX7219_ADDR_DIGIT2, var_tmp
 	
-	; 4th digit: °
-	movlw			_7SEG_DEG
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT3
+	; 4th digit: DEG
+	_max7219_7segK	MAX7219_ADDR_DIGIT3, _7SEG_DEG
 	
 	; DONE
 	goto			displayRefreshDone
@@ -439,45 +462,65 @@ temperatureIsPositive
 	; 1st digit: Integer part of the temperature (tmp_hi), divided by 10
 	movf			var_temp_hi, W
 	_div_k			10
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT0
+	_max7219_7segW	MAX7219_ADDR_DIGIT0
 
 	; 2nd digit: Reminder of the division (stored in var_tmp)
-	movf			var_tmp, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT1
+	_max7219_7segF	MAX7219_ADDR_DIGIT1, var_tmp
 	
-	; 3rd digit: °
-	movlw			_7SEG_DEG
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT2
+	; 3rd digit: DEG
+	_max7219_7segK	MAX7219_ADDR_DIGIT2, _7SEG_DEG
 
 	; 4th digit: C
-	movlw			_7SEG_C
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT3
+	_max7219_7segK	MAX7219_ADDR_DIGIT3, _7SEG_C
+
 	goto			displayRefreshDone
 
 
-displayDate
-	; Half of the assigned time will be used in displaying the year, the other half displaying month and date
+;*************************************************
+;    TIME SLICE 01-00 : MONTH AND DATE
+;*************************************************
+displayMonthAndDate
+	; Half of the assigned time will be used in displaying the month, the other half displaying date
 	btfss			t0_counter, 3
-	goto			displayYear
+	goto			displayMonth
 
-	; Only read date every other step of the counter
-	btfss			t0_counter, 0
-	call			read_date
-	call			display_date
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;    TIME SLICE 01-00-01 : DATE
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	call			display_date_alone
 	goto			displayRefreshDone
 
-displayYear
-	; Only read year every other step of the counter
-	btfss			t0_counter, 0
-	call			read_year
-	call			display_year
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;    TIME SLICE 01-00-00 : MONTH
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+displayMonth
+	_max7219_wk		MAX7219_ADDR_DIGIT0, 0
+	; Gather the current month in a variable (var_tmp2)
+	decf			var_time_month2, W
+	btfsc			var_time_month1, 0
+	addlw			10
+	movwf			var_tmp2
+	; Now multiply it by 3 to get the index of the first char in the month table
+	addwf			var_tmp2, F
+	addwf			var_tmp2, F
+	movf			var_tmp2, W
+	call			_month_name_data_char_table
+	_max7219_7segW	MAX7219_ADDR_DIGIT1
+	incf			var_tmp2, F
+	movf			var_tmp2, W
+	call			_month_name_data_char_table
+	_max7219_7segW	MAX7219_ADDR_DIGIT2
+	incf			var_tmp2, F
+	movf			var_tmp2, W
+	call			_month_name_data_char_table
+	_max7219_7segW	MAX7219_ADDR_DIGIT3
 	goto			displayRefreshDone
 
 
+; ###################################################
+;  TIME SLICE 00
+;   CURRENT TIME
+; ###################################################
 displayTime
 	; Only read time every other step of the counter
 	btfss			t0_counter, 0
@@ -494,6 +537,9 @@ displayTime
 	movwf			var_k			
 	call			display_time
 
+; ###################################################
+;  / END OF DISPLAY TIME SLICES
+; ###################################################
 displayRefreshDone
 	call			read_buttons
 
@@ -512,7 +558,7 @@ adjustTimeSub
 
 	_set_time_digit	var_time_hh1, MAX7219_ADDR_DIGIT0, 0, 2
 
-	; Max range for digit HH2 depends if digit HH1 > 1
+	; Max range for digit HH2 depends of digit HH1 > 1
 	btfss			var_time_hh1, 1
 	goto			adjustHH2Max9
 	; Limit it to 3 (So the max hour you can set is basically 23)
@@ -526,23 +572,11 @@ adjustTimeHourDone
 	_set_time_digit	var_time_mm1, MAX7219_ADDR_DIGIT2, 0, 5
 	_set_time_digit	var_time_mm2, MAX7219_ADDR_DIGIT3, 0, 9
 
-	; Save current time to clock
-	_ds1302_wk		DS1302_CONTROLREG, 0	; bit 7: Write Protect
-	_ds1302_wk		DS1302_SECONDS,	0		; Reset to 00 seconds
-	_ds1302_setdigs	var_time_hh1, var_time_hh2, var_i
-	_ds1302_wf		DS1302_HOURS,	var_i
-	_ds1302_setdigs	var_time_mm1, var_time_mm2, var_i
-	_ds1302_wf		DS1302_MINUTES,	var_i
-
 	; ----- ADJUST YEAR ------------------------
 	call			read_year
 	call			display_year
 	_set_time_digit	var_time_year1, MAX7219_ADDR_DIGIT2, 0, 9
 	_set_time_digit	var_time_year2, MAX7219_ADDR_DIGIT3, 0, 9
-	; Save current year to clock
-	_ds1302_wk		DS1302_CONTROLREG, 0	; bit 7: Write Protect
-	_ds1302_setdigs	var_time_year1, var_time_year2, var_i
-	_ds1302_wf		DS1302_YEAR, var_i
 
 	; ----- ADJUST DATE ------------------------
 	; Show current date in display
@@ -551,7 +585,7 @@ adjustTimeHourDone
 
 	_set_time_digit	var_time_month1, MAX7219_ADDR_DIGIT0, 0, 1
 
-	; Max range for digit MONTH2 depends if digit MONTH1 >= 1
+	; Max range for digit MONTH2 depends of digit MONTH1 >= 1
 	btfss			var_time_month1, 0
 	goto			adjustMonth2Max9
 	; Limit it to 2 (So the max month you can set is 12)
@@ -564,7 +598,7 @@ adjustMonth2Max9
 adjustTimeMonthDone
 	_set_time_digit	var_time_date1, MAX7219_ADDR_DIGIT2, 0, 3
 
-	; Max range for digit DATE2 depends if digit DATE1 > 2
+	; Max range for digit DATE2 depends of digit DATE1 > 2
 	movf			var_time_date1, W
 	sublw			2
 	btfsc			STATUS, C
@@ -578,7 +612,7 @@ adjustDate2Max9
 	; Special case here: If the first digit was 1 or 2 then a zero is a totally valid
 	; second digit. If it was a 0, though, we need to make sure the second digit is at
 	; least a 1.
-	movf			var_time_date1
+	movf			var_time_date1, W
 	btfsc			STATUS, Z
 	goto			adjustDate2From1To9
 
@@ -590,12 +624,25 @@ adjustDate2From1To9
 	_set_time_digit	var_time_date2, MAX7219_ADDR_DIGIT3, 1, 9
 
 adjustTimeDateDone
-	; Save current date to clock
-	_ds1302_wk		DS1302_CONTROLREG, 0	; bit 7: Write Protect
+	_ds1302_wk		DS1302_CONTROLREG, 0				; Disable write protection
+	_ds1302_wk		DS1302_SECONDS,	DS1302_SECONDS_HALT	; Halt the clock
+	; TIME --------------------------------------
+	_ds1302_setdigs	var_time_hh1, var_time_hh2, var_i
+	_ds1302_wf		DS1302_HOURS,	var_i
+	_ds1302_setdigs	var_time_mm1, var_time_mm2, var_i
+	_ds1302_wf		DS1302_MINUTES,	var_i
+	; DATE --------------------------------------
 	_ds1302_setdigs	var_time_month1, var_time_month2, var_i
 	_ds1302_wf		DS1302_MONTH, var_i
 	_ds1302_setdigs	var_time_date1, var_time_date2, var_i
 	_ds1302_wf		DS1302_DATE,	var_i
+	; YEAR --------------------------------------
+	_ds1302_setdigs	var_time_year1, var_time_year2, var_i
+	_ds1302_wf		DS1302_YEAR, var_i
+	; -------------------------------------------
+	_ds1302_wk		DS1302_CONTROLREG, 0				; Re-enable write protection
+	_ds1302_wk		DS1302_SECONDS,	0					; Restart the clock
+	
 	; Go back to displaying time
 	goto			displayLoop
 
@@ -618,195 +665,6 @@ goToSleep
 	nop
 	; Device will wake up at this point. Go back to pre initialization code
 	goto			preInit
-
-;###############################################################################
-;##                                                                           ##
-;##                     M I S C   F U N C T I O N S                           ##
-;##                                                                           ##
-;###############################################################################
-; ---------------------------------------------------------------------
-; set_time_digit
-; ---------------------------------------------------------------------
-; Manipulates the value of var_tmp, so it's adjusted by the user pressing the phyiscal buttons,
-; The value will be show in digit var_k of the display, and will be kept between the values of
-; var_m and var_n.
-set_time_digit
-_set_time_digit_start
-	call			read_buttons
-	; If our timer0 counter is even, don't show the digit
-	btfss			t0_counter, 0
-	goto			_set_time_digit_blank
-	; Otherwise show the current value and skip the blanking
-	movf			var_tmp, W
-	call			_7seg_table
-	_max7219_wwf	var_k
-	goto			_set_time_digit_readbuttons
-
-_set_time_digit_blank
-	movlw			0
-	_max7219_wwf	var_k
-
-_set_time_digit_readbuttons
-	; End the process if the SET button is pressed
-	btfsc			var_buttons_pressed, BUTTON_SET_BIT
-	goto			_set_time_digit_end
-
-	; INC button pressed?
-	btfsc			var_buttons_pressed, BUTTON_INC_BIT
-	incf			var_tmp, F
-
-	; Check allowed values for this digit
-	movf			var_n, W
-	addlw			1
-	subwf			var_tmp, W
-	btfss			STATUS, C
-	goto			_set_time_digit_value_ok
-	; Value past max? Set to min val
-	movf			var_m, W
-	movwf			var_tmp
-
-_set_time_digit_value_ok
-	; Keep going with this digit
-	goto			_set_time_digit_start
-
-_set_time_digit_end
-	; Show the value we set before moving to the next digit
-	movf			var_tmp, W
-	call			_7seg_table
-	_max7219_wwf	var_k
-	return
-
-; ---------------------------------------------------------------------
-; read_time
-; ---------------------------------------------------------------------
-read_time
-	; The DS1302 module already splits numbers in decimal digits
-	; so we need to extract them (b6-b4: "tenths", b3-b0: Units)
-	_ds1302_read	DS1302_MINUTES
-	_ds1302_getdigs	var_time_mm1, var_time_mm2
-
-	_ds1302_read	DS1302_HOURS
-	_ds1302_getdigs	var_time_hh1, var_time_hh2
-	
-	_ds1302_read	DS1302_SECONDS
-	movwf			var_time_sec
-	return
-
-; ---------------------------------------------------------------------
-; read_date
-; ---------------------------------------------------------------------
-read_date
-	_ds1302_read	DS1302_MONTH
-	_ds1302_getdigs	var_time_month1, var_time_month2
-
-	_ds1302_read	DS1302_DATE
-	_ds1302_getdigs	var_time_date1, var_time_date2
-	return
-	
-; ---------------------------------------------------------------------
-; read_year
-; ---------------------------------------------------------------------
-read_year
-	_ds1302_read	DS1302_YEAR
-	_ds1302_getdigs	var_time_year1, var_time_year2
-	return
-
-; ---------------------------------------------------------------------
-; display_date
-; ---------------------------------------------------------------------
-display_date
-	; Show current value of date variables in all 4 digits
-	movf			var_time_month1, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT0
-	
-	movf			var_time_month2, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT1
-	
-	movf			var_time_date1, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT2
-	
-	movf			var_time_date2, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT3
-	return
-	
-; ---------------------------------------------------------------------
-; display_year
-; ---------------------------------------------------------------------
-display_year
-	movlw			FIXED_YEAR_DIGIT0
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT0
-
-
-	movlw			FIXED_YEAR_DIGIT1
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT1
-
-	movf			var_time_year1, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT2
-	
-	movf			var_time_year2, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT3	
-	return
-
-
-; ---------------------------------------------------------------------
-; display_time
-; ---------------------------------------------------------------------
-display_time
-; Show current value of time variables in all 4 digits
-	movf			var_time_hh1, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT0
-	
-	movf			var_time_hh2, W
-	call			_7seg_table
-	_max7219_ww		MAX7219_ADDR_DIGIT1
-	
-	movf			var_time_mm1, W
-	call			_7seg_table
-	iorwf			var_k, W
-	_max7219_ww		MAX7219_ADDR_DIGIT2
-	
-	movf			var_time_mm2, W
-	call			_7seg_table
-	iorwf			var_k, W
-	_max7219_ww		MAX7219_ADDR_DIGIT3
-	return
-
-
-; ---------------------------------------------------------------------
-; read_buttons
-; ---------------------------------------------------------------------
-read_buttons
-	clrf			var_buttons_pressed
-	clrf			var_i
-
-	btfss			BUTTON_SET
-	bsf				var_i, BUTTON_SET_BIT
-	btfss			BUTTON_INC
-	bsf				var_i, BUTTON_INC_BIT
-
-	; Copy to buttons_pressed
-	movf			var_i, W
-	movwf			var_buttons_pressed
-
-	; Clear the bits if the buttons were already pressed before
-	btfsc			var_last_buttons, BUTTON_SET_BIT
-	bcf				var_buttons_pressed, BUTTON_SET_BIT
-	btfsc			var_last_buttons, BUTTON_INC_BIT
-	bcf				var_buttons_pressed, BUTTON_INC_BIT
-	
-	; Copy current status to backup
-	movf			var_i, W
-	movwf			var_last_buttons
-	return
 
 ;###############################################################################
 ;##                                                                           ##
@@ -994,12 +852,15 @@ DS1302_MINUTES				EQU		B'000001'
 DS1302_HOURS				EQU		B'000010'
 DS1302_DATE					EQU		B'000011'
 DS1302_MONTH				EQU		B'000100'
-DS1302_DAY					EQU		B'000101'
+DS1302_DAYOFWEEK			EQU		B'000101'
 DS1302_YEAR					EQU		B'000110'
 DS1302_CONTROLREG			EQU		B'000111'
 DS1302_TRICKLECHARGESELECT	EQU		B'001000'
 DS1302_CLOCK_BURST			EQU		B'011111'
 
+
+DS1302_SECONDS_HALT			EQU		B'1000000'
+DS1302_CONTROLREG_WRPROT	EQU		B'1000000'
 
 DS1302_RAMSTART				EQU		B'100000'
 DS1302_RAMEND				EQU		B'111111'
@@ -1206,35 +1067,173 @@ max7219_writeCmd
 
 ;###############################################################################
 ;##                                                                           ##
+;##                   D I S P L A Y   F U N C T I O N S                       ##
+;##                                                                           ##
+;###############################################################################
+; ---------------------------------------------------------------------
+; display_year
+; ---------------------------------------------------------------------
+display_year
+	_max7219_7segK	MAX7219_ADDR_DIGIT0, 2
+	_max7219_7segK	MAX7219_ADDR_DIGIT1, 0
+	_max7219_7segF	MAX7219_ADDR_DIGIT2, var_time_year1
+	_max7219_7segF	MAX7219_ADDR_DIGIT3, var_time_year2
+	return
+
+
+; ---------------------------------------------------------------------
+; display_time
+; ---------------------------------------------------------------------
+display_time
+	; Show current value of time variables in all 4 digits
+	_max7219_7segF	MAX7219_ADDR_DIGIT0, var_time_hh1
+	_max7219_7segF	MAX7219_ADDR_DIGIT1, var_time_hh2
+	
+	movf			var_time_mm1, W
+	call			_7seg_table
+	iorwf			var_k, W
+	_max7219_ww		MAX7219_ADDR_DIGIT2
+	
+	movf			var_time_mm2, W
+	call			_7seg_table
+	iorwf			var_k, W
+	_max7219_ww		MAX7219_ADDR_DIGIT3
+	return
+
+
+; ---------------------------------------------------------------------
+; display_date
+; ---------------------------------------------------------------------
+display_date
+	; Show current value of date variables in all 4 digits
+	_max7219_7segF	MAX7219_ADDR_DIGIT0, var_time_month1
+	_max7219_7segF	MAX7219_ADDR_DIGIT1, var_time_month2
+	_max7219_7segF	MAX7219_ADDR_DIGIT2, var_time_date1
+	_max7219_7segF	MAX7219_ADDR_DIGIT3, var_time_date2
+	return
+	
+
+; ---------------------------------------------------------------------
+; display_date_alone
+; ---------------------------------------------------------------------
+display_date_alone
+	; Show current value of date variables in the last 2 digits only
+	_max7219_wk		MAX7219_ADDR_DIGIT0, 0
+	_max7219_wk		MAX7219_ADDR_DIGIT1, 0
+
+	_max7219_7segF	MAX7219_ADDR_DIGIT2, var_time_date1
+	_max7219_7segF	MAX7219_ADDR_DIGIT3, var_time_date2
+	return
+
+
+	
+
+;###############################################################################
+;##                                                                           ##
+;##                          N A M E   T A B L E S                            ##
+;##                                                                           ##
+;###############################################################################
+; ---------------------------------------------------------------------
+; _month_name_data_char_table
+; ---------------------------------------------------------------------
+_month_name_data_char_table
+	movwf			var_i
+	; Computed goto that takes into account all the address bits
+	; not only the lower 8 (which the regular "add W to PCL" does)
+	movlw			HIGH (_month_name_data_char)
+	movwf			PCLATH
+	movf			var_i, W
+	addlw			LOW(_month_name_data_char)
+	btfsc			STATUS, C
+	incf			PCLATH, F
+	movwf			PCL
+	
+_month_name_data_char
+	retlw			_7SEG_J
+	retlw			_7SEG_A
+	retlw			_7SEG_N
+
+	retlw			_7SEG_F
+	retlw			_7SEG_E
+	retlw			_7SEG_b
+	
+	retlw			_7SEG_M
+	retlw			_7SEG_A
+	retlw			_7SEG_r
+
+	retlw			_7SEG_A
+	retlw			_7SEG_P
+	retlw			_7SEG_r
+	
+	retlw			_7SEG_M
+	retlw			_7SEG_A
+	retlw			_7SEG_Y
+	
+	retlw			_7SEG_J
+	retlw			_7SEG_U
+	retlw			_7SEG_N
+	
+	retlw			_7SEG_J
+	retlw			_7SEG_U
+	retlw			_7SEG_L
+	
+	retlw			_7SEG_A
+	retlw			_7SEG_U
+	retlw			_7SEG_G
+	
+	retlw			5
+	retlw			_7SEG_E
+	retlw			_7SEG_P
+	
+	retlw			0
+	retlw			_7SEG_C
+	retlw			_7SEG_t
+	
+	retlw			_7SEG_N
+	retlw			_7SEG_o
+	retlw			_7SEG_v
+	
+	retlw			_7SEG_d
+	retlw			_7SEG_E
+	retlw			_7SEG_C
+
+	IF ((HIGH ($)) != (HIGH (_month_name_data_char_table)))
+		ERROR "_month_name_data_char_table CROSSES PAGE BOUNDARY!"
+	ENDIF
+	return
+
+
+;###############################################################################
+;##                                                                           ##
 ;##                   7 - S E G M E N T   D I G I T   M A P                   ##
 ;##                                                                           ##
 ;###############################################################################
-; Special characters. Most of them untested.
+; Special characters.
 _7SEG_A				EQU		10			
-_7SEG_B				EQU		11
+_7SEG_b				EQU		11
 _7SEG_C				EQU		12
-_7SEG_D				EQU		13
+_7SEG_d				EQU		13
+_7SEG_E				EQU		14
 _7SEG_F				EQU		15
 _7SEG_DEG			EQU		16
 _7SEG_MINUS			EQU		17
 _7SEG_H				EQU		18
 _7SEG_L				EQU		19
 _7SEG_P				EQU		20
-_7SEG_b				EQU		21
-_7SEG_d				EQU		22
+_7SEG_N				EQU		21
+_7SEG_M				EQU		22
 _7SEG_n				EQU		23
 _7SEG_o				EQU		24
 _7SEG_r				EQU		25
-_7SEG_VERTBAR_LFT	EQU		26
-_7SEG_VERTBAR_RGT	EQU		27
-_7SEG_DBL_VERTBAR	EQU		28
-_7SEG_EQUAL			EQU		29
-_7SEG_QUESTION		EQU		30
-_7SEG_BLANK			EQU		31
+_7SEG_t				EQU		26
+_7SEG_G				EQU		27
+_7SEG_Y				EQU		28
+_7SEG_J				EQU		29
+_7SEG_U				EQU		30
+_7SEG_i				EQU		31
+_7SEG_v				EQU		32
 
 _7seg_table
-	; Make sure it's < 32
-	andlw			B'00011111'
 	; Backup the index
 	movwf			var_i
 	; Computed goto that takes into account all the address bits
@@ -1261,27 +1260,155 @@ _7seg_table_data
 	retlw			B'01111111'	; 8
 	retlw			B'01111011'	; 9
 	retlw			B'01110111'	; A
-	retlw			B'11111111'	; B (Same as 8, but with DP)
+	retlw			B'00011111'	; b
 	retlw			B'01001110'	; C
-	retlw			B'11111110'	; D (Same as 0, but with DP)
+	retlw			B'00111101'	; D
 	retlw			B'01001111'	; E
 	retlw			B'01000111'	; F
 
-	retlw			B'01100011'	; °
+	retlw			B'01100011'	; DEG
 	retlw			B'00000001'	; -
 	retlw			B'00110111'	; H
 	retlw			B'00001110'	; L
 	retlw			B'01100111'	; P
-	retlw			B'00011110'	; b (lowercase)
-	retlw			B'00111101'	; d (lowercase)
+	retlw			B'01110110'	; N
+	retlw			B'01010100'	; M
 	retlw			B'00010101'	; n (lowercase)
-	retlw			B'00011101'	; o (lowercase)
-	retlw			B'00000101'	; r (lowercase)
-	retlw			B'00000110'	; | (left)
-	retlw			B'00110000'	; | (right)
-	retlw			B'00110110'	; ||
-	retlw			B'00001001'	; =
-	retlw			B'01100101'	; ?
-	retlw			B'00000000'	; BLANK
+	retlw			B'00011101'	; o
+	retlw			B'00000101'	; r
+	retlw			B'00001111'	; t
+	retlw			B'01011110'	; G
+	retlw			B'00111011'	; Y
+	retlw			B'01111100'	; J
+	retlw			B'00111110'	; U
+	retlw			B'00000100'	; i
+	retlw			B'00011100'	; v (u lowercase)
+
+	IF ((HIGH ($)) != (HIGH (_7seg_table)))
+		ERROR "_7seg_table CROSSES PAGE BOUNDARY!"
+	ENDIF
+
+	
+;###############################################################################
+;##                                                                           ##
+;##                     M I S C   F U N C T I O N S                           ##
+;##                                                                           ##
+;###############################################################################
+; ---------------------------------------------------------------------
+; set_time_digit
+; ---------------------------------------------------------------------
+; Manipulates the value of var_tmp, so it's adjusted by the user pressing the physical buttons,
+; The value will be show in digit var_k of the display, and will be kept between the values of
+; var_m and var_n.
+set_time_digit
+_set_time_digit_start
+	call			read_buttons
+	; If our timer0 counter is even, don't show the digit
+	btfss			t0_counter, 0
+	goto			_set_time_digit_blank
+	; Otherwise show the current value and skip the blanking
+	movf			var_tmp, W
+	call			_7seg_table
+	_max7219_wwf	var_k
+	goto			_set_time_digit_readbuttons
+
+_set_time_digit_blank
+	movlw			0
+	_max7219_wwf	var_k
+
+_set_time_digit_readbuttons
+	; End the process if the SET button is pressed
+	btfsc			var_buttons_pressed, BUTTON_SET_BIT
+	goto			_set_time_digit_end
+
+	; INC button pressed?
+	btfsc			var_buttons_pressed, BUTTON_INC_BIT
+	incf			var_tmp, F
+
+	; Check allowed values for this digit
+	movf			var_n, W
+	addlw			1
+	subwf			var_tmp, W
+	btfss			STATUS, C
+	goto			_set_time_digit_value_ok
+	; Value past max? Set to min val
+	movf			var_m, W
+	movwf			var_tmp
+
+_set_time_digit_value_ok
+	; Keep going with this digit
+	goto			_set_time_digit_start
+
+_set_time_digit_end
+	; Show the value we set before moving to the next digit
+	movf			var_tmp, W
+	call			_7seg_table
+	_max7219_wwf	var_k
+	return
+
+; ---------------------------------------------------------------------
+; read_time
+; ---------------------------------------------------------------------
+read_time
+	; The DS1302 module already splits numbers in decimal digits
+	; so we need to extract them (b6-b4: "tenths", b3-b0: Units)
+	_ds1302_read	DS1302_MINUTES
+	_ds1302_getdigs	var_time_mm1, var_time_mm2
+
+	_ds1302_read	DS1302_HOURS
+	_ds1302_getdigs	var_time_hh1, var_time_hh2
+	
+	_ds1302_read	DS1302_SECONDS
+	movwf			var_time_sec
+	return
+
+; ---------------------------------------------------------------------
+; read_date
+; ---------------------------------------------------------------------
+read_date
+	_ds1302_read	DS1302_MONTH
+	_ds1302_getdigs	var_time_month1, var_time_month2
+
+	_ds1302_read	DS1302_DATE
+	_ds1302_getdigs	var_time_date1, var_time_date2
+	
+	; _ds1302_read	DS1302_DAYOFWEEK
+	; movwf			var_time_dow
+	return
+	
+; ---------------------------------------------------------------------
+; read_year
+; ---------------------------------------------------------------------
+read_year
+	_ds1302_read	DS1302_YEAR
+	_ds1302_getdigs	var_time_year1, var_time_year2
+	return
+	
+; ---------------------------------------------------------------------
+; read_buttons
+; ---------------------------------------------------------------------
+read_buttons
+	clrf			var_buttons_pressed
+	clrf			var_i
+
+	btfss			BUTTON_SET
+	bsf				var_i, BUTTON_SET_BIT
+	btfss			BUTTON_INC
+	bsf				var_i, BUTTON_INC_BIT
+
+	; Copy to buttons_pressed
+	movf			var_i, W
+	movwf			var_buttons_pressed
+
+	; Clear the bits if the buttons were already pressed before
+	btfsc			var_last_buttons, BUTTON_SET_BIT
+	bcf				var_buttons_pressed, BUTTON_SET_BIT
+	btfsc			var_last_buttons, BUTTON_INC_BIT
+	bcf				var_buttons_pressed, BUTTON_INC_BIT
+	
+	; Copy current status to backup
+	movf			var_i, W
+	movwf			var_last_buttons
+	return
 
 	END
