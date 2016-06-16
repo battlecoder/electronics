@@ -522,8 +522,6 @@ displayMonth
 ;   CURRENT TIME
 ; ###################################################
 displayTime
-    ; Only read time every other step of the counter
-    btfss           t0_counter, 0
     call            read_time
     
     movlw           0
@@ -640,8 +638,8 @@ adjustTimeDateDone
     _ds1302_setdigs var_time_year1, var_time_year2, var_i
     _ds1302_wf      DS1302_YEAR, var_i
     ; -------------------------------------------
-    _ds1302_wk      DS1302_CONTROLREG, 0                ; Re-enable write protection
-    _ds1302_wk      DS1302_SECONDS, 0                   ; Restart the clock
+    _ds1302_wk      DS1302_CONTROLREG, DS1302_CONTROLREG_WRPROT ; Re-enable write protection
+    _ds1302_wk      DS1302_SECONDS, 0                   		; Restart the clock
     
     ; Go back to displaying time
     goto            displayLoop
