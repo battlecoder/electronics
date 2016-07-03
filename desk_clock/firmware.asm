@@ -398,9 +398,29 @@ displayLoop
     ; Disable test mode
     _max7219_wk     MAX7219_ADDR_DISPLAYTEST, 0
 
+    ; Sometimes due to poor electrical conditions, interference, noise or simply due to Murphy's Law, the RTC
+    ; module will halt unexpectedly and will resume ticking later just as randomly as it stopped, causing a
+    ; drift in the readings that in my experience can go from just a couple of seconds to more than 1 hour.
+    ; As we can't guarantee that this will not happen (especially when running the circuit from batteries), we
+    ; will "ensure" the clock is always running by checking the HALT bit of the seconds register, and clearing it
+    ; if we detect it's set.
+    _ds1302_read    DS1302_SECONDS
+    movwf           var_time_sec
+    btfss           var_time_sec, 7
+    goto            clockIsNotHalted
+
+    ; Ok, clock is halted, let's fix that
+    bcf             var_time_sec, 7
+    _ds1302_wk      DS1302_CONTROLREG, 0                            ; Disable write protection
+    _ds1302_wf      DS1302_SECONDS, var_time_sec                    ; Set the seconds again with the halt bit clear
+    _ds1302_wk      DS1302_CONTROLREG, DS1302_CONTROLREG_WRPROT     ; Re-enable write protection
+
+clockIsNotHalted
     ; Show time for a couple of t0_counter cycles, otherwise show temperature + date
     btfss           t0_counter, 5
     goto            displayTime
+    
+
 
 ; ###################################################
 ;  TIME SLICE GROUP 01
@@ -545,8 +565,18 @@ displayRefreshDone
     btfsc           var_buttons_pressed, BUTTON_SET_BIT
     goto            adjustTimeSub
 
-    ; Go back to displaying whatever we should be displaying
+
+    ; Wait a bit and go back to displaying whatever we should be displaying
+    movlw   255
+    movwf   var_i
+
+waitBeforeLoop
+    nop
+    decfsz          var_i
+    goto            waitBeforeLoop
+
     goto            displayLoop
+
     
 adjustTimeSub
     ; ----- ADJUST TIME ------------------------
@@ -639,7 +669,7 @@ adjustTimeDateDone
     _ds1302_wf      DS1302_YEAR, var_i
     ; -------------------------------------------
     _ds1302_wk      DS1302_CONTROLREG, DS1302_CONTROLREG_WRPROT ; Re-enable write protection
-    _ds1302_wk      DS1302_SECONDS, 0                   		; Restart the clock
+    _ds1302_wk      DS1302_SECONDS, 0                           ; Restart the clock
     
     ; Go back to displaying time
     goto            displayLoop
@@ -886,12 +916,8 @@ _ds1302_write_bit
     btfsc           var_i, 0
     bsf             DS1302_IO
     nop
-    nop
-    nop
     ; Clock pulse
     bsf             DS1302_CLK
-    nop
-    nop
     nop
     bcf             DS1302_CLK
     ; Shift value, decrease counter and loop
@@ -925,11 +951,7 @@ _ds1302_read_bit
     ; Clock pulse
     bsf             DS1302_CLK
     nop
-    nop
-    nop
     bcf             DS1302_CLK
-    nop
-    nop
     nop
     ; Decrease counter and loop
     decfsz          var_j, F
