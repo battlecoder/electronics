@@ -36,20 +36,20 @@
     
 
 ; PIN ASSINGMENTS -----------------------------------------------------
-#define MAX7219_CLK         PORTA, 0
-#define MAX7219_DIN         PORTA, 1
+#define MAX7219_CLK         PORTA, 1
+#define MAX7219_DIN         PORTA, 0
 #define MAX7219_LOAD        PORTA, 2
 
-#define I2C_SDA             PORTA, 4
-#define I2C_SCL             PORTA, 3
+#define I2C_SDA             PORTB, 6
+#define I2C_SCL             PORTB, 7
 
-#define DS1302_CLK          PORTB, 6
+#define DS1302_CLK          PORTB, 3
 #define DS1302_IO           PORTB, 5
 #define DS1302_CE           PORTB, 4
 
 #define EXT_INT_INPUT       PORTB, 0        ; HAS TO BE RB0/INT. Used by the optional wake-up-on-interrupt code.
-#define BUTTON_INC          PORTB, 3
-#define BUTTON_SET          PORTB, 7
+#define BUTTON_INC          PORTA, 6
+#define BUTTON_SET          PORTA, 7
 
 #define BUTTON_INC_BIT      0
 #define BUTTON_SET_BIT      1
@@ -469,7 +469,7 @@ temperatureIsNegative
     _div_k          10
     _max7219_7segW  MAX7219_ADDR_DIGIT1
 
-    ; 3rd digit: Reminder of the division (stored in var_tmp)
+    ; 3rd digit: Remainder of the division (stored in var_tmp)
     _max7219_7segF  MAX7219_ADDR_DIGIT2, var_tmp
     
     ; 4th digit: DEG
@@ -484,7 +484,7 @@ temperatureIsPositive
     _div_k          10
     _max7219_7segW  MAX7219_ADDR_DIGIT0
 
-    ; 2nd digit: Reminder of the division (stored in var_tmp)
+    ; 2nd digit: Remainder of the division (stored in var_tmp)
     _max7219_7segF  MAX7219_ADDR_DIGIT1, var_tmp
     
     ; 3rd digit: DEG
@@ -703,7 +703,7 @@ goToSleep
 ; ---------------------------------------------------------------------
 ; Internal I2C Macros fro inlining
 ; ---------------------------------------------------------------------
-; Remember that I2C lines need a pull up resistor because are open drain!
+; Remember that I2C lines need a pull up resistor because they are open drain!
 _i2c_sda_high macro
     ; To drive the line high, we will set the pin as input
     bsf             STATUS, RP0
