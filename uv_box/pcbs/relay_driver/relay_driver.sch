@@ -1,0 +1,209 @@
+EESchema Schematic File Version 2
+LIBS:power
+LIBS:device
+LIBS:transistors
+LIBS:conn
+LIBS:linear
+LIBS:regul
+LIBS:74xx
+LIBS:cmos4000
+LIBS:adc-dac
+LIBS:memory
+LIBS:xilinx
+LIBS:microcontrollers
+LIBS:dsp
+LIBS:microchip
+LIBS:analog_switches
+LIBS:motorola
+LIBS:texas
+LIBS:intel
+LIBS:audio
+LIBS:interface
+LIBS:digital-audio
+LIBS:philips
+LIBS:display
+LIBS:cypress
+LIBS:siliconi
+LIBS:opto
+LIBS:atmel
+LIBS:contrib
+LIBS:valves
+LIBS:relays
+LIBS:relay_driver-cache
+EELAYER 25 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L GND #PWR2
+U 1 1 59518CF4
+P 2800 3450
+F 0 "#PWR2" H 2800 3200 50  0001 C CNN
+F 1 "GND" H 2800 3300 50  0000 C CNN
+F 2 "" H 2800 3450 50  0001 C CNN
+F 3 "" H 2800 3450 50  0001 C CNN
+	1    2800 3450
+	1    0    0    -1  
+$EndComp
+$Comp
+L +5V #PWR1
+U 1 1 59518D17
+P 2800 3000
+F 0 "#PWR1" H 2800 2850 50  0001 C CNN
+F 1 "+5V" H 2800 3140 50  0000 C CNN
+F 2 "" H 2800 3000 50  0001 C CNN
+F 3 "" H 2800 3000 50  0001 C CNN
+	1    2800 3000
+	1    0    0    -1  
+$EndComp
+$Comp
+L CONN_01X03 J1
+U 1 1 59518D30
+P 2550 3200
+F 0 "J1" H 2550 3400 50  0000 C CNN
+F 1 "CONN_01X03" V 2650 3200 50  0000 C CNN
+F 2 "" H 2550 3200 50  0001 C CNN
+F 3 "" H 2550 3200 50  0001 C CNN
+	1    2550 3200
+	-1   0    0    1   
+$EndComp
+$Comp
+L PN2222A Q1
+U 1 1 59518DD5
+P 3650 3200
+F 0 "Q1" H 3850 3275 50  0000 L CNN
+F 1 "PN2222A" H 3350 3400 50  0000 L CNN
+F 2 "TO_SOT_Packages_THT:TO-92_Molded_Narrow" H 3850 3125 50  0001 L CIN
+F 3 "" H 3650 3200 50  0001 L CNN
+	1    3650 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R1
+U 1 1 59518E24
+P 3200 3200
+F 0 "R1" V 3280 3200 50  0000 C CNN
+F 1 "1K" V 3200 3200 50  0000 C CNN
+F 2 "" V 3130 3200 50  0001 C CNN
+F 3 "" H 3200 3200 50  0001 C CNN
+	1    3200 3200
+	0    1    1    0   
+$EndComp
+$Comp
+L Screw_Terminal_1x03 J2
+U 1 1 59518E9C
+P 5750 2600
+F 0 "J2" H 5750 2950 50  0000 C TNN
+F 1 "Screw_Terminal_1x03" V 5600 2600 50  0000 C TNN
+F 2 "" H 5750 2275 50  0001 C CNN
+F 3 "" H 5725 2700 50  0001 C CNN
+	1    5750 2600
+	-1   0    0    1   
+$EndComp
+$Comp
+L RM50-xx11 RL1
+U 1 1 59518F97
+P 4700 2600
+F 0 "RL1" H 5150 2750 50  0000 L CNN
+F 1 "RM50-xx11" H 5150 2650 50  0000 L CNN
+F 2 "" H 4700 2600 50  0001 C CNN
+F 3 "" H 4700 2600 50  0001 C CNN
+	1    4700 2600
+	1    0    0    -1  
+$EndComp
+$Comp
+L +5V #PWR4
+U 1 1 5951909F
+P 4150 2150
+F 0 "#PWR4" H 4150 2000 50  0001 C CNN
+F 1 "+5V" H 4150 2290 50  0000 C CNN
+F 2 "" H 4150 2150 50  0001 C CNN
+F 3 "" H 4150 2150 50  0001 C CNN
+	1    4150 2150
+	1    0    0    -1  
+$EndComp
+$Comp
+L D D1
+U 1 1 595190B6
+P 4150 2600
+F 0 "D1" V 4350 2500 50  0000 C CNN
+F 1 "1N4007" H 4150 2500 50  0000 C CNN
+F 2 "" H 4150 2600 50  0001 C CNN
+F 3 "" H 4150 2600 50  0001 C CNN
+	1    4150 2600
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	4150 2150 4150 2450
+Wire Wire Line
+	4150 2250 4500 2250
+Wire Wire Line
+	4500 2250 4500 2300
+Wire Wire Line
+	4500 2950 4500 2900
+Wire Wire Line
+	3750 2950 4500 2950
+Wire Wire Line
+	4150 2950 4150 2750
+Connection ~ 4150 2250
+Wire Wire Line
+	3750 3000 3750 2950
+Connection ~ 4150 2950
+$Comp
+L GND #PWR3
+U 1 1 595196D6
+P 3750 3500
+F 0 "#PWR3" H 3750 3250 50  0001 C CNN
+F 1 "GND" H 3750 3350 50  0000 C CNN
+F 2 "" H 3750 3500 50  0001 C CNN
+F 3 "" H 3750 3500 50  0001 C CNN
+	1    3750 3500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3750 3500 3750 3400
+Wire Wire Line
+	3350 3200 3450 3200
+Wire Wire Line
+	2750 3200 3050 3200
+Wire Wire Line
+	2750 3300 2800 3300
+Wire Wire Line
+	2800 3300 2800 3450
+Wire Wire Line
+	2800 3000 2800 3100
+Wire Wire Line
+	2800 3100 2750 3100
+Wire Wire Line
+	5550 2400 5550 2200
+Wire Wire Line
+	5550 2200 4800 2200
+Wire Wire Line
+	4800 2200 4800 2300
+Wire Wire Line
+	4900 2900 4900 2950
+Wire Wire Line
+	4900 2950 5300 2950
+Wire Wire Line
+	5300 2950 5300 2600
+Wire Wire Line
+	5300 2600 5550 2600
+Wire Wire Line
+	5000 2300 5000 2250
+Wire Wire Line
+	5000 2250 5400 2250
+Wire Wire Line
+	5400 2250 5400 2800
+Wire Wire Line
+	5400 2800 5550 2800
+$EndSCHEMATC
