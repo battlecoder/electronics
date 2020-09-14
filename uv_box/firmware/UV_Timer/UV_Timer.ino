@@ -12,7 +12,7 @@
 const int output_pin                = 13;
 const int digit_map[TOTAL_DIGITS]   = {12, 11, 10, 9};
 const int segment_map[7]            = {2, 3, 4, 5, 6, 7, 8};
-const int button_pins[TOTAL_BTTNS]  = {A0, A1, A2, A3, A4};
+const int button_pins[TOTAL_BTTNS]  = {A0, A1, A2, A3, 0};
 
 #define BTTN_PREV                   1
 #define BTTN_NEXT                   2
@@ -73,11 +73,12 @@ const byte digit_segmap[] = {
 };
 
 volatile long remainingTime = 0;
-volatile word btPressCount[TOTAL_BTTNS];
+volatile bool btPressState[TOTAL_BTTNS];
+volatile bool btPrevState[TOTAL_BTTNS];
 volatile byte digits[TOTAL_DIGITS];
 volatile bool showDigits[TOTAL_DIGITS];
 volatile byte curState = STATE_IDLE;
-volatile byte curEditDigit = 0;
+volatile char curEditDigit = 0;
 
 /********************************************************************************
  **                                                                            **
@@ -120,6 +121,11 @@ void show_digit (byte n, byte data){
   digitalWrite(digit_map[n % TOTAL_DIGITS], LOW);
 }
 
+void hide_digit (byte n){
+  // Disable the digit we want to show
+  digitalWrite(digit_map[n % TOTAL_DIGITS], HIGH);
+}
+
 void set_time (long tSeconds){
   byte secDisplay = tSeconds % 60;
   byte minDisplay = tSeconds / 60;
@@ -142,6 +148,19 @@ void startWithTimeOnDisplay(){
   remainingTime = secs*1000;
   curState = STATE_RUNNING;
 }
+
+bool button_read(int button){
+  return (digitalRead(button) == 0);
+}
+
+bool is_new_press(byte b){
+  return (btPressState[b] == true) && (btPrevState[b] == false);
+}
+
+bool is_button_pressed(byte b){
+  return (btPressState[b] == true);
+}
+
 
 /********************************************************************************
  **                                                                            **
@@ -169,7 +188,8 @@ void setup() {
   for (c = 0; c < TOTAL_BTTNS; c++) {
     pinMode (button_pins[c], INPUT_PULLUP);
     digitalWrite(button_pins[c], INPUT_PULLUP);  // For analog pins
-    btPressCount[c] = 0;
+    btPressState[c] = false;
+    btPrevState[c] = false;
   }
 
   // Timer0 is already used for millis() - we'll just interrupt somewhere
@@ -177,6 +197,7 @@ void setup() {
   OCR0A = 0xAF;
   TIMSK0 |= _BV(OCIE0A);
 
+  
   //Serial.begin(9600);
 }
 
@@ -196,18 +217,18 @@ void loop() {
   // State-dependant code ----------------
   switch (curState){
     case STATE_IDLE:
-      if (btPressCount[BTTN_NEXT] == 1) {
+      curEditDigit = -1;
+      if (is_new_press(BTTN_NEXT)) {
         curEditDigit = 0;
         curState = STATE_EDITING;
-      }else if (btPressCount[BTTN_PREV] == 1) {
+      }else if (is_new_press(BTTN_PREV)) {
         curEditDigit = TOTAL_DIGITS-1;
         curState = STATE_EDITING;
-      } else if (btPressCount[BTTN_INC] == 1){
+      } else if (is_new_press(BTTN_INC)){
         // Pressing "INC" should take you to edit the last digit (seconds)
         curEditDigit = TOTAL_DIGITS-1;
         curState = STATE_EDITING;
-        btPressCount[BTTN_INC] = 0; // This will make the next iteration (now in edit state) to parse this button, increasing the digit.
-      }else if (btPressCount[BTTN_START] == 1 && btPressCount[BTTN_SAFE]){
+      }else if (is_new_press(BTTN_START) && is_new_press(BTTN_SAFE)){
         startWithTimeOnDisplay();
       }
       break;
@@ -217,7 +238,7 @@ void loop() {
       for (b = 0; b < TOTAL_DIGITS; b++) showDigits[b] = show;
 
       // Un-pause immediately if it's safe to do so.
-      if (btPressCount[BTTN_SAFE]) curState = STATE_RUNNING;
+      if (is_button_pressed(BTTN_SAFE)) curState = STATE_RUNNING;
       break;
 
     case STATE_PAUSED:
@@ -225,11 +246,11 @@ void loop() {
       for (b = 0; b < TOTAL_DIGITS; b++) showDigits[b] = show;
 
       // Resume the process (only if it's safe)
-      if (btPressCount[BTTN_START] == 1 && btPressCount[BTTN_SAFE]) {
+      if (is_new_press(BTTN_START) && is_button_pressed(BTTN_SAFE)) {
         curState = STATE_RUNNING;
       }
       // Or return to IDLE upon any other button press
-      else if (btPressCount[BTTN_NEXT] == 1 || btPressCount[BTTN_PREV] == 1 || btPressCount[BTTN_INC] == 1) {
+      else if (is_new_press(BTTN_NEXT) || is_new_press(BTTN_PREV) || is_new_press(BTTN_INC)) {
         curState = STATE_IDLE;
       }
       break;
@@ -244,7 +265,7 @@ void loop() {
       digits[3] = CHAR_E;
       // Any key gets out of this mode
       for (b = 0; b < TOTAL_BTTNS; b++) {
-        if (btPressCount[b] == 1) {
+        if (is_new_press(b)) {
           resetTime();
           curState = STATE_IDLE;
           break;
@@ -257,9 +278,9 @@ void loop() {
       set_time (remainingTime / 1000);
       if (remainingTime == 0) {
         curState = STATE_FINISHED;
-      }else if (btPressCount[BTTN_SAFE] == 0){
+      }else if (is_button_pressed(BTTN_SAFE) == false){
         curState = STATE_INTERRUPTED;
-      }else if (btPressCount[BTTN_START] == 1){
+      }else if (is_new_press(BTTN_START) == true){
         curState = STATE_PAUSED;
       }else{
         outVal = true;
@@ -269,46 +290,48 @@ void loop() {
     case STATE_EDITING:
       curEditDigit = curEditDigit % TOTAL_DIGITS;
       showDigits[curEditDigit] = (millis() % 400 < 200);
-      // increment or decrement based on presstime
-      if (btPressCount[BTTN_INC] == 1){
-        if (digits[curEditDigit] < digit_max[curEditDigit]) {
-          digits[curEditDigit]++;
-        }else {
+      if (is_new_press(BTTN_INC)){
+        digits[curEditDigit]++;
+        if (digits[curEditDigit] > digit_max[curEditDigit]) {
           digits[curEditDigit] = 0;
         }
-      }else if (btPressCount[BTTN_PREV] == 1 && curEditDigit > 0){
+      }else if (is_new_press(BTTN_PREV)){
         curEditDigit--;
-      }else if (btPressCount[BTTN_NEXT] == 1){
+      }else if (is_new_press(BTTN_NEXT)){
         curEditDigit++;
-        if (curEditDigit >= TOTAL_DIGITS) curState = STATE_IDLE;
-      }else if (btPressCount[BTTN_START] == 1){
+      }else if (is_new_press(BTTN_START)){
         // Reset time and go back to idle if the "INC" button is also pressed with "START", otherwise start the process (only if safe)
-        if (btPressCount[BTTN_INC]){
+        if (is_button_pressed(BTTN_INC)){
           resetTime();
           curState = STATE_IDLE;
-        }else if (btPressCount[BTTN_SAFE]){
+        }else if (is_button_pressed(BTTN_SAFE)){
           startWithTimeOnDisplay();
         }
       }
+      if (curEditDigit < 0) curEditDigit = TOTAL_DIGITS-1;
+      if (curEditDigit >= TOTAL_DIGITS) curEditDigit = 0;
     break;
   }
 
    // Write the approrpriate value to the output pin
    digitalWrite(output_pin, outVal);
-   
+
   // Read buttons
   for (b = 0; b < TOTAL_BTTNS; b++) {
-    if (digitalRead(button_pins[b])) {
-      btPressCount[b] = 0;
-    }else {
-      if (btPressCount[b] < 0xffff) btPressCount[b]++;
-    }
+    btPrevState[b] = btPressState[b];
+    btPressState[b] = button_read(button_pins[b]);
   }
 
    // Update digits on the 7-seg display
+   // This will also act as a delay between loops helping debounce button reads
    for (b = 0; b < TOTAL_DIGITS; b++){
     display_off();
     if (showDigits[b]) show_digit (b, digit_segmap[digits[b]]);
-    delayMicroseconds(100);
+    delayMicroseconds(500);
    }
+
+  // Read buttons again and confirm it's indeed pressed.
+  for (b = 0; b < TOTAL_BTTNS; b++) {
+    btPressState[b] = btPressState[b] && button_read(button_pins[b]);
+  }
 }
